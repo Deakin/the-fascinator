@@ -88,7 +88,7 @@ public class NewRecordProcessor implements Processor {
     private boolean postProcess(String id, String inputKey, String configFilePath, HashMap dataMap) throws Exception 
     {
         File configFile = new File(configFilePath);
-        SimpleDateFormat dtFormat = new SimpleDateFormat("yyy-MM-dd'T'HH:mm:ss'Z'");
+        SimpleDateFormat dtFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
         JsonSimple config = new JsonSimple(configFile);
         config.getJsonObject().put("lastrun", dtFormat.format(new Date()));
         List<String> oids = (List<String>) dataMap.get(inputKey);
