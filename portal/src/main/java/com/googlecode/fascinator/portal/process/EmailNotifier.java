@@ -14,6 +14,7 @@ import com.googlecode.fascinator.common.messaging.MessagingServices;
 import org.apache.commons.mail.Email;
 import org.apache.commons.mail.DefaultAuthenticator;
 import org.apache.commons.mail.SimpleEmail;
+import org.apache.commons.mail.HtmlEmail;
 
 import org.json.simple.JSONArray;
 import org.slf4j.Logger;
@@ -57,22 +58,44 @@ public class EmailNotifier implements Processor {
     
     private String replaceVars(SolrDoc solrDoc, String text, List<String> vars, JsonSimple config) {
         for (String var : vars) {
-            String varField = config.getString("", "mapping", var);
+            String varField = "" ;
+            if(var.equals("$_owner_name") || var.equals("$_owner_email"))
+            {
+                varField = "owner";
+            }
+            else
+            {
+                varField = config.getString("", "mapping", var);
+            }
+
             log.debug("Replacing '" + var + "' using field '" + varField + "'");
+
             String replacement = solrDoc.getString(var, varField);
             if (replacement == null || "".equals(replacement)) {
                 JSONArray arr = solrDoc.getArray(varField);
                 if (arr != null) {
                     replacement = (String) arr.get(0);
-                    if (replacement == null) {
-                        // giving up, setting back to source value so caller can evaluate
-                        replacement = var;
-                    }
-                } else {
-                    // giving up, setting back to source value so caller can evaluate
-                    replacement = var;
                 }
             }
+
+            if (replacement == null)
+            {
+                replacement = "" ;
+            }
+
+            if(var.equals("$_owner_name") || var.equals("$_owner_email"))
+            {
+                String[] ias = parseEmail(replacement);
+                if(var.equals("$_owner_name"))
+                {
+                    replacement = ias[0] ;
+                }
+                if(var.equals("$_owner_email"))
+                {
+                    replacement = ias[1] ;
+                }
+            }
+
             text = text.replace(var, replacement);
         }
         return text;
@@ -107,12 +130,6 @@ public class EmailNotifier implements Processor {
             String recipient = to;
             if (to.startsWith("$")) {
                 recipient = replaceVars(solrDoc, to, vars, config);
-                if (recipient.startsWith("$")) {
-                    // exception encountered...
-                    log.error("Failed to build the email recipient:'" + recipient + "'. Please check the mapping field and verify that it exists and is populated in Solr.");
-                    failedOids.add(oid);
-                    continue;
-                }
             }
             if (!email(oid, recipient, subject, body)) {
                 failedOids.add(oid);
@@ -123,37 +140,64 @@ public class EmailNotifier implements Processor {
     }
     
     private boolean email(String oid, String recipient, String subject, String body) {
-        try {
-            Email email = new SimpleEmail();
-            log.debug("Email host: " + host);
-            log.debug("Email port: " + port);
-            log.debug("Email username: " + username);
-            log.debug("Email from: " + from);
-            log.debug("Email to: " + recipient);
-            log.debug("Email Subject is: " + subject);
-            log.debug("Email Body is: " + body);
-            email.setHostName(host);
-            email.setSmtpPort(Integer.parseInt(port));
-            email.setAuthenticator(new DefaultAuthenticator(username, password));
-            // the method setSSL is deprecated on the newer versions of commons email...
-            email.setSSL("true".equalsIgnoreCase(ssl));
-            email.setTLS("true".equalsIgnoreCase(tls));
-            email.setFrom(from);
-            email.setSubject(subject);
-            email.setMsg(body);
-            if (recipient.indexOf(",") >= 0) {
-                String[] recs= recipient.split(",");
-                for (String rec : recs) {
-                    email.addTo(rec);
-                }
-            } else {
-                email.addTo(recipient);
+        String[] recs= recipient.split(",");
+        ArrayList rec_sent = new ArrayList() ;
+        for (String rec : recs) {
+            String[] ias = parseEmail(rec);
+            String rec_name = ias[0] ;
+            String rec_email = ias[1] ;
+            String message_body = body ;
+            message_body= message_body.replace("#REC_NAME", rec_name);
+            message_body= message_body.replace("#REC_EMAIL", rec_email);
+
+            if(rec_sent.contains(rec_email) || rec_email.indexOf('@')==-1)
+            {
+                continue ;
             }
-            email.send();
-        } catch (Exception ex) {
-            log.debug("Error sending notification mail for oid:" + oid, ex);
-            return false;
+
+            try {
+                // use HTML email format
+                HtmlEmail email = new HtmlEmail();
+                log.debug("Email host: " + host);
+                log.debug("Email port: " + port);
+                log.debug("Email username: " + username);
+                log.debug("Email from: " + from);
+                log.debug("Email to: " + recipient);
+                log.debug("Email Subject is: " + subject);
+                log.debug("Email Body is: " + body);
+                email.setHostName(host);
+                email.setSmtpPort(Integer.parseInt(port));
+                email.setAuthenticator(new DefaultAuthenticator(username, password));
+                // the method setSSL is deprecated on the newer versions of commons email...
+                email.setSSL("true".equalsIgnoreCase(ssl));
+                email.setTLS("true".equalsIgnoreCase(tls));
+                email.setFrom(from);
+                email.setSubject(subject);
+                email.setHtmlMsg(message_body);
+                //email.addTo(rec_email);
+                email.addTo("neil.fan@deakin.edu.au");
+                email.send();
+
+                rec_sent.add(rec_email);
+            } catch (Exception ex) {
+                log.debug("Error sending notification mail for oid:" + oid + " to " + rec, ex);
+                return false;
+            }
         }
         return true;
+    }
+
+    private String[] parseEmail(String email)
+    {
+        int lt = email.indexOf('<') ;
+        int gt = email.indexOf('>') ;
+        if(lt>-1 && gt>-1 && lt+1<=email.length())
+        {
+            String name = email.substring(0, lt) ;
+            String address = email.substring(lt+1, gt) ;
+            return new String[]{name,address};
+        }
+
+        return new String[]{email,email};
     }
 }
