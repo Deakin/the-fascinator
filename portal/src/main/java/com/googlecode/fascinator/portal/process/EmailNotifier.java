@@ -39,6 +39,8 @@ public class EmailNotifier implements Processor {
     private String to;
     private String username;
     private String password;
+    private String testmode;
+    private String redirect;
     
     private void init(JsonSimple config) {
         host = config.getString("", "host");
@@ -49,6 +51,8 @@ public class EmailNotifier implements Processor {
         password = config.getString("", "password");
         tls = config.getString("false", "tls");
         ssl = config.getString("false", "ssl");
+        testmode = config.getString("false", "testmode");
+        redirect = config.getString("false", "redirect");
         Properties props = System.getProperties();
 
         props.put("mail.smtp.auth", "true");
@@ -128,7 +132,7 @@ public class EmailNotifier implements Processor {
             String subject = replaceVars(solrDoc, subjectTemplate, vars, config);
             String body = replaceVars(solrDoc, bodyTemplate, vars, config);
             String recipient = to;
-            if (to.startsWith("$")) {
+            if (to.contains("$")) {
                 recipient = replaceVars(solrDoc, to, vars, config);
             }
             if (!email(oid, recipient, subject, body)) {
@@ -173,9 +177,16 @@ public class EmailNotifier implements Processor {
                 email.setTLS("true".equalsIgnoreCase(tls));
                 email.setFrom(from);
                 email.setSubject(subject);
+
+                if( "true".equalsIgnoreCase(testmode) )
+                {
+                    message_body += "<p>TESTMODE: was sent to " + rec_email ;
+                    rec_email = redirect ;
+                }
+
+                email.addTo(rec_email);
                 email.setHtmlMsg(message_body);
-                //email.addTo(rec_email);
-                email.addTo("neil.fan@deakin.edu.au");
+                email.addTo("redbox-alerts@deakin.edu.au");
                 email.send();
 
                 rec_sent.add(rec_email);
